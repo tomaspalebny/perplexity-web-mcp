@@ -147,3 +147,5 @@ Then from Hermes: call `mcp__perplexity__search` with a trivial query.
 - Model selection: real `mouse.click()` at coordinates (synthetic DOM click
   is ignored); trigger located by `#pplx-icon-chevron-down` icon — 11b150a
 - Max-tier models excluded from `model` param (Pro account) — 4f93c16
+
+- ask_with_file tool (file attachments via hidden composer input + chip-settled wait) — 801cc76

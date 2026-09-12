@@ -122,6 +122,25 @@ The `model` parameter (on both `search` and `search_advanced`) picks the answer 
 
 ---
 
+### `ask_with_file`
+
+Ask Perplexity with **local file attachment(s)** — code, PDF, CSV, docs, images, audio/video. The files must be readable on the machine running this MCP server (absolute paths).
+
+**Parameters:**
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `query` | `string` | Yes | Question/instruction about the attached file(s) |
+| `files` | `string[]` | Yes | 1–10 absolute paths on this server |
+| `model` | `string` | No | Answer model (see below) |
+| `timeout_seconds` | `int` | No | Max wait for the answer (default 180, max 600) |
+
+**How it works:** the composer has a hidden `input[type=file]` (accept list mirrors the UI); files are set directly on it, then the tool waits until every file name appears as an attachment chip before submitting — submitting earlier sends a query with no file. Returns the answer, sources, and the **thread URL** (`perplexity.ai/search/<uuid>`) so the chat stays re-openable.
+
+**Returns:** same as `search`, plus a `Thread:` line with the permanent URL.
+
+---
+
 ### `search_advanced`
 
 Same as `search` but lets you select which sources Perplexity searches. You can combine multiple sources. Uses browser UI automation to toggle the source checkboxes — more powerful but slightly less resilient to UI changes.
