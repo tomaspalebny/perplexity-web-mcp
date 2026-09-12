@@ -2,7 +2,7 @@ import type { Page } from "playwright";
 import { newSearchPage } from "./browser.js";
 
 const PERPLEXITY_HOME = "https://www.perplexity.ai/";
-export const DEFAULT_TIMEOUT_MS = 20_000;
+export const DEFAULT_TIMEOUT_MS = 90_000;
 
 // Maps source name to its SVG icon id in the Perplexity UI — locale-independent
 const SOURCE_ICON: Record<string, string> = {
@@ -64,9 +64,20 @@ async function runSearch(query: string, timeoutMs: number, sources: string[] | n
     await searchBox.press("Enter");
 
     log("Waiting for answer to complete...");
-    // Perplexity shows a "N sources" button when the answer finishes.
-    // The word varies by UI language — match any button whose text contains digits.
-    await page.locator("button").filter({ hasText: /\d/ }).first().waitFor({ timeout: timeoutMs });
+    // Poll until the answer paragraph stabilizes (or the anonymous login wall /
+    // the sources badge appears). The old "button with digits" heuristic fires
+    // too early on sidebar/toolbar buttons.
+    const outcome = await waitForCompletion(page, timeoutMs);
+    if (outcome === "wall") {
+      // Anonymous wall — Perplexity often answers the 2nd query from the
+      // same session, so retry once before giving up.
+      log("Anonymous login wall hit, retrying query...");
+      const retryBox = page.locator("#ask-input").first();
+      await retryBox.click();
+      await retryBox.fill(query);
+      await retryBox.press("Enter");
+      await waitForCompletion(page, timeoutMs);
+    }
 
     await dismissDialogs(page);
 
@@ -139,6 +150,45 @@ async function selectSources(page: Page, sources: string[]): Promise<void> {
   await page.waitForTimeout(300);
 }
 
+// Waits until the answer in the thread-content area stabilizes, the anonymous
+// login wall appears, or the timeout elapses. Returns "ok" | "wall" | "timeout".
+async function waitForCompletion(page: Page, timeoutMs: number): Promise<"ok" | "wall" | "timeout"> {
+  const deadline = Date.now() + timeoutMs;
+  const POLL_MS = 1500;
+  let lastLen = -1;
+  let stableSince = 0;
+  const STABLE_NEEDED = 2; // consecutive stable polls (~3 s of no change)
+
+  while (Date.now() < deadline) {
+    await page.waitForTimeout(POLL_MS);
+    const state = await page.evaluate(() => {
+      const tc = document.querySelector('div[class*="thread-content"]') ?? document.querySelector('[role="tabpanel"]');
+      const body = document.body.innerText;
+      return {
+        answerLen: (tc as HTMLElement | null)?.innerText.trim().length ?? 0,
+        hasSources: /Sources\s*\n?\s*\d+/i.test(body),
+        generating: /Searching the web|Researching|Starting/i.test(body),
+        wall: /Sign up and repeat your request/i.test(body),
+      };
+    });
+
+    if (state.wall) return "wall";
+    // A sources badge with count AND no "Searching" indicator means the answer
+    // finished. (The badge appears before the answer text streams in, so
+    // checking it alone returns too early.)
+    if (state.hasSources && !state.generating && state.answerLen > 50) return "ok";
+    // Text stopped changing and no "Searching" indicator — done.
+    if (state.answerLen === lastLen && state.answerLen > 50 && !state.generating) {
+      stableSince++;
+      if (stableSince >= STABLE_NEEDED) return "ok";
+    } else {
+      stableSince = 0;
+    }
+    lastLen = state.answerLen;
+  }
+  return "timeout";
+}
+
 async function dismissDialogs(page: Page): Promise<void> {
   // Cookie banner — "Cookies nécessaires" / "Necessary cookies"
   const cookieBtn = page.locator(
@@ -164,7 +214,10 @@ async function dismissDialogs(page: Page): Promise<void> {
 
 async function extractAnswer(page: Page): Promise<string> {
   return page.evaluate(() => {
-    const panel = document.querySelector('[role="tabpanel"]');
+    // 2026 UI: answer lives in div[class*="thread-content"]; old UI used [role="tabpanel"]
+    const panel =
+      document.querySelector('div[class*="thread-content"]') ??
+      document.querySelector('[role="tabpanel"]');
     if (!panel) return "";
 
     function getCleanText(el: Element): string {
@@ -200,15 +253,21 @@ async function extractAnswer(page: Page): Promise<string> {
       if (tag === "h2" || tag === "h3") {
         parts.push(`\n## ${text}\n`);
       } else if (tag === "code") {
-        parts.push(`\`\`\`\n${text}\n\`\`\``);
+        parts.push("```\n" + text + "\n```");
       } else if (tag === "li") {
-        parts.push(`- ${text}`);
+        parts.push("- " + text);
       } else {
         parts.push(text);
       }
     });
 
-    return parts.join("\n").trim();
+    let result = parts.join("\n").trim();
+    if (!result) {
+      // Fallback: no block elements found (Perplexity sometimes renders answer
+      // as plain text nodes or unusual tags) — use visible innerText of the panel.
+      result = (panel as HTMLElement).innerText.trim();
+    }
+    return result;
   });
 }
 
@@ -220,6 +279,7 @@ async function extractSources(page: Page): Promise<Source[]> {
     document.querySelectorAll<HTMLAnchorElement>('a[href^="http"]').forEach((link) => {
       const url = link.href;
       if (seen.has(url) || url.includes("perplexity.ai")) return;
+      if (/perplexity\.com\/hub\/(legal|privacy)/i.test(url)) return;
       seen.add(url);
       const title = link.textContent?.trim() || new URL(url).hostname;
       sources.push({ title, url });
