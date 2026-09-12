@@ -51,7 +51,7 @@ const MODEL_LABELS: Record<string, string> = {
 // "Model") — locate it by its chevron-down icon + non-empty label.
 // A synthetic DOM .click() is ignored by the UI; a real mouse click at the
 // button's coordinates is required.
-async function selectModel(page: Page, model: string): Promise<void> {
+export async function selectModel(page: Page, model: string): Promise<void> {
   const label = MODEL_LABELS[model];
   if (!label) throw new Error(`Unknown model: ${model}`);
 
@@ -203,7 +203,7 @@ async function selectSources(page: Page, sources: string[]): Promise<void> {
 
 // Waits until the answer in the thread-content area stabilizes, the anonymous
 // login wall appears, or the timeout elapses. Returns "ok" | "wall" | "timeout".
-async function waitForCompletion(page: Page, timeoutMs: number): Promise<"ok" | "wall" | "timeout"> {
+export async function waitForCompletion(page: Page, timeoutMs: number): Promise<"ok" | "wall" | "timeout"> {
   const deadline = Date.now() + timeoutMs;
   const POLL_MS = 1500;
   let lastLen = -1;
@@ -240,7 +240,7 @@ async function waitForCompletion(page: Page, timeoutMs: number): Promise<"ok" | 
   return "timeout";
 }
 
-async function dismissDialogs(page: Page): Promise<void> {
+export async function dismissDialogs(page: Page): Promise<void> {
   // Cookie banner — "Cookies nécessaires" / "Necessary cookies"
   const cookieBtn = page.locator(
     'button:has-text("Cookies nécessaires"), button:has-text("Necessary cookies")'
@@ -263,7 +263,7 @@ async function dismissDialogs(page: Page): Promise<void> {
   }
 }
 
-async function extractAnswer(page: Page): Promise<string> {
+export async function extractAnswer(page: Page): Promise<string> {
   return page.evaluate(() => {
     // 2026 UI: answer lives in div[class*="thread-content"]; old UI used [role="tabpanel"]
     const panel =
@@ -322,7 +322,7 @@ async function extractAnswer(page: Page): Promise<string> {
   });
 }
 
-async function extractSources(page: Page): Promise<Source[]> {
+export async function extractSources(page: Page): Promise<Source[]> {
   return page.evaluate(() => {
     const sources: { title: string; url: string }[] = [];
     const seen = new Set<string>();

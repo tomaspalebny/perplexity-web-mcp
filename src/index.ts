@@ -4,6 +4,7 @@ import { z } from "zod";
 import { ensureAuthenticated, checkSession } from "./auth.js";
 import { ensureBrowser, getFirstPage } from "./browser.js";
 import { search, searchWithSources, SearchResult, DEFAULT_TIMEOUT_MS } from "./search.js";
+import { askWithFiles } from "./attachment.js";
 
 // Models observed in the Perplexity UI model selector (2026-09).
 // "Max"-tagged models (GPT-5.6 Sol, Claude Opus 5) excluded — require Max subscription.
@@ -86,6 +87,39 @@ mcp.addTool({
     }
     await ensureAuthenticated();
     return "Login successful. You are now authenticated on Perplexity.ai.";
+  },
+});
+
+
+mcp.addTool({
+  name: "ask_with_file",
+  description:
+    "Ask Perplexity.ai a question WITH FILE ATTACHMENT(S) — uploads local files (code, PDF, CSV, images, docs, audio/video; paths on the server running this MCP) into the chat and returns the AI answer with sources. Use this when the question is about file content rather than the web.",
+  parameters: z.object({
+    query: z.string().describe("The question/instruction about the attached file(s)"),
+    files: z
+      .array(z.string())
+      .min(1)
+      .max(10)
+      .describe("Absolute paths of files to attach (on this server). Accepted: source code, txt/md, pdf, docx, xlsx, pptx, csv, json/yaml/xml, images, audio, video."),
+    model: z.enum(MODELS).optional().describe("Answer model to use. Defaults to Perplexity's current selection."),
+    timeout_seconds: z
+      .number()
+      .int()
+      .positive()
+      .max(600)
+      .optional()
+      .describe("Max seconds to wait for the answer (default 180)."),
+  }),
+  execute: async ({ query, files, model, timeout_seconds }) => {
+    await ensureBrowser();
+    const result = await askWithFiles({
+      query,
+      files,
+      model,
+      timeoutMs: timeout_seconds ? timeout_seconds * 1000 : undefined,
+    });
+    return formatResult(result) + "\n\nThread: " + result.url;
   },
 });
 
