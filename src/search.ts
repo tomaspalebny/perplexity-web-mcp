@@ -47,17 +47,31 @@ const MODEL_LABELS: Record<string, string> = {
 };
 
 // Opens the model selector and picks the given model.
+// The trigger button shows the CURRENTLY SELECTED model name (not the word
+// "Model") — locate it by its chevron-down icon + non-empty label.
+// A synthetic DOM .click() is ignored by the UI; a real mouse click at the
+// button's coordinates is required.
 async function selectModel(page: Page, model: string): Promise<void> {
   const label = MODEL_LABELS[model];
   if (!label) throw new Error(`Unknown model: ${model}`);
 
-  const modelBtn = page.locator('button:has-text("Model")').first();
-  await modelBtn.waitFor({ state: "visible", timeout: 10_000 });
-  await modelBtn.click();
+  const box = await page.evaluate(() => {
+    const btn = Array.from(document.querySelectorAll("button")).find(b => {
+      const use = b.querySelector("use");
+      const href = use?.getAttribute("xlink:href") || use?.getAttribute("href") || "";
+      return href === "#pplx-icon-chevron-down" && !!(b.innerText || "").trim();
+    });
+    if (!btn) return null;
+    const r = btn.getBoundingClientRect();
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+  });
+  if (!box) throw new Error("Model selector button not found");
+
+  await page.mouse.click(box.x, box.y);
   await page.waitForTimeout(1000);
 
-  // Items are role=menuitemradio (or menuitem) whose text starts with the label
-  const item = page.locator('[role="menuitemradio"], [role="menuitem"], [role="option"]')
+  // Menu items are role=menu entries whose text contains the model label
+  const item = page.locator('[role="menu"] [role="menuitemradio"], [role="menu"] [role="menuitem"], [role="menu"] [role="option"], [role="menuitemradio"], [role="menuitem"], [role="option"]')
     .filter({ hasText: label }).first();
   await item.waitFor({ state: "visible", timeout: 5_000 });
   await item.click();
