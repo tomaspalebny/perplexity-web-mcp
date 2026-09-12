@@ -173,14 +173,14 @@ async function waitForCompletion(page: Page, timeoutMs: number): Promise<"ok" | 
     });
 
     if (state.wall) return "wall";
-    // A sources badge with count AND no "Searching" indicator means the answer
-    // finished. (The badge appears before the answer text streams in, so
-    // checking it alone returns too early.)
-    if (state.hasSources && !state.generating && state.answerLen > 50) return "ok";
-    // Text stopped changing and no "Searching" indicator — done.
-    if (state.answerLen === lastLen && state.answerLen > 50 && !state.generating) {
+    // Done = sources badge present, no "Searching" indicator, AND the answer
+    // text has stopped growing. The badge appears before the text finishes
+    // streaming, so returning on the badge alone truncates the answer.
+    if (state.answerLen === lastLen && state.answerLen > 0) {
       stableSince++;
-      if (stableSince >= STABLE_NEEDED) return "ok";
+      const settled = stableSince >= STABLE_NEEDED && state.answerLen > 50;
+      if (settled && state.hasSources && !state.generating) return "ok";
+      if (settled && !state.generating) return "ok";
     } else {
       stableSince = 0;
     }
