@@ -23,17 +23,49 @@ export interface SearchResult {
 
 const log = (msg: string) => console.error(`[perplexity-web-mcp] ${msg}`);
 
-export async function search(query: string, timeoutMs: number): Promise<SearchResult> {
-  log(`Search: "${query}" (timeout: ${timeoutMs}ms)`);
-  return runSearch(query, timeoutMs, null);
+export async function search(query: string, timeoutMs: number, model?: string): Promise<SearchResult> {
+  log(`Search: "${query}" (timeout: ${timeoutMs}ms, model: ${model ?? "default"})`);
+  return runSearch(query, timeoutMs, null, model);
 }
 
-export async function searchWithSources(query: string, timeoutMs: number, sources: string[]): Promise<SearchResult> {
-  log(`Search: "${query}" sources=[${sources.join(",")}] (timeout: ${timeoutMs}ms)`);
-  return runSearch(query, timeoutMs, sources);
+export async function searchWithSources(query: string, timeoutMs: number, sources: string[], model?: string): Promise<SearchResult> {
+  log(`Search: "${query}" sources=[${sources.join(",")}] (timeout: ${timeoutMs}ms, model: ${model ?? "default"})`);
+  return runSearch(query, timeoutMs, sources, model);
 }
 
-async function runSearch(query: string, timeoutMs: number, sources: string[] | null): Promise<SearchResult> {
+// Model names as they appear in the UI model selector (2026-09).
+// Max-tier models omitted — account has Pro, not Max.
+const MODEL_LABELS: Record<string, string> = {
+  "best": "Best",
+  "gpt-5.6-terra": "GPT-5.6 Terra",
+  "gemini-3.8-flash": "Gemini 3.8 Flash",
+  "claude-sonnet-5": "Claude Sonnet 5",
+  "kimi-k3": "Kimi K3",
+  "glm-5.3": "GLM 5.3",
+  "grok-4.6": "Grok 4.6",
+  "nemotron-3-ultra": "Nemotron 3 Ultra",
+};
+
+// Opens the model selector and picks the given model.
+async function selectModel(page: Page, model: string): Promise<void> {
+  const label = MODEL_LABELS[model];
+  if (!label) throw new Error(`Unknown model: ${model}`);
+
+  const modelBtn = page.locator('button:has-text("Model")').first();
+  await modelBtn.waitFor({ state: "visible", timeout: 10_000 });
+  await modelBtn.click();
+  await page.waitForTimeout(1000);
+
+  // Items are role=menuitemradio (or menuitem) whose text starts with the label
+  const item = page.locator('[role="menuitemradio"], [role="menuitem"], [role="option"]')
+    .filter({ hasText: label }).first();
+  await item.waitFor({ state: "visible", timeout: 5_000 });
+  await item.click();
+  await page.waitForTimeout(500);
+  log(`Model selected: ${label}`);
+}
+
+async function runSearch(query: string, timeoutMs: number, sources: string[] | null, model?: string): Promise<SearchResult> {
   const page = await newSearchPage();
 
   try {
@@ -43,6 +75,11 @@ async function runSearch(query: string, timeoutMs: number, sources: string[] | n
 
     // Wait for the search input to be ready before any further interaction
     await page.locator("#ask-input").first().waitFor({ state: "visible", timeout: 10_000 });
+
+    if (model) {
+      log(`Selecting model: ${model}...`);
+      await selectModel(page, model);
+    }
 
     if (sources) {
       log(`Selecting sources: [${sources.join(", ")}]...`);

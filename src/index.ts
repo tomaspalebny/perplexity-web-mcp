@@ -5,6 +5,19 @@ import { ensureAuthenticated, checkSession } from "./auth.js";
 import { ensureBrowser, getFirstPage } from "./browser.js";
 import { search, searchWithSources, SearchResult, DEFAULT_TIMEOUT_MS } from "./search.js";
 
+// Models observed in the Perplexity UI model selector (2026-09).
+// "Max"-tagged models (GPT-5.6 Sol, Claude Opus 5) excluded — require Max subscription.
+export const MODELS = [
+  "best",
+  "gpt-5.6-terra",
+  "gemini-3.8-flash",
+  "claude-sonnet-5",
+  "kimi-k3",
+  "glm-5.3",
+  "grok-4.6",
+  "nemotron-3-ultra",
+] as const;
+
 function formatResult(result: SearchResult): string {
   if (!result.answer) return "No answer found. Perplexity may have changed its structure.";
   const sourcesText = result.sources.length > 0
@@ -31,10 +44,11 @@ mcp.addTool({
     "Search the web using Perplexity.ai and get an AI-synthesized answer with cited sources. Uses default Perplexity settings.",
   parameters: z.object({
     query: z.string().describe("The search query"),
+    model: z.enum(MODELS).optional().describe("Answer model to use. Defaults to Perplexity's current selection."),
   }),
-  execute: async ({ query }) => {
+  execute: async ({ query, model }) => {
     await ensureBrowser();
-    const result = await search(query, TIMEOUT_MS);
+    const result = await search(query, TIMEOUT_MS, model);
     return formatResult(result);
   },
 });
@@ -49,10 +63,11 @@ mcp.addTool({
       .array(z.enum(["web", "academic", "social"]))
       .min(1)
       .describe("Sources to search: 'web' (general web), 'academic' (scholarly articles), 'social' (Reddit & forums). Can combine multiple."),
+    model: z.enum(MODELS).optional().describe("Answer model to use. Defaults to Perplexity's current selection."),
   }),
-  execute: async ({ query, sources }) => {
+  execute: async ({ query, sources, model }) => {
     await ensureBrowser();
-    const result = await searchWithSources(query, TIMEOUT_MS, sources);
+    const result = await searchWithSources(query, TIMEOUT_MS, sources, model);
     return formatResult(result);
   },
 });
