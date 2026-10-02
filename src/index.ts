@@ -16,6 +16,7 @@ export const MODELS = [
   "kimi-k3",
   "glm-5.3",
   "grok-4.6",
+  "grok-4.7",
   "nemotron-3-ultra",
 ] as const;
 
@@ -46,10 +47,14 @@ mcp.addTool({
   parameters: z.object({
     query: z.string().describe("The search query"),
     model: z.enum(MODELS).optional().describe("Answer model to use. Defaults to Perplexity's current selection."),
+    timeout_seconds: z.number().optional().describe("Wait budget in seconds for the full answer; floor 300, default 600."),
   }),
-  execute: async ({ query, model }) => {
+  execute: async ({ query, model, timeout_seconds }) => {
     await ensureBrowser();
-    const result = await search(query, TIMEOUT_MS, model);
+    // Pro answers stream for minutes; 90s default truncates. Floor 300s
+    // (user decision 2026-10-02).
+    const budget = Math.max(300_000, timeout_seconds ? timeout_seconds * 1000 : TIMEOUT_MS);
+    const result = await search(query, budget, model);
     return formatResult(result);
   },
 });

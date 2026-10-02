@@ -43,6 +43,7 @@ const MODEL_LABELS: Record<string, string> = {
   "kimi-k3": "Kimi K3",
   "glm-5.3": "GLM 5.3",
   "grok-4.6": "Grok 4.6",
+  "grok-4.7": "Grok 4.7",
   "nemotron-3-ultra": "Nemotron 3 Ultra",
 };
 
@@ -133,10 +134,16 @@ async function runSearch(query: string, timeoutMs: number, sources: string[] | n
     await dismissDialogs(page);
 
     log("Extracting answer from DOM...");
-    const [answer, citedSources] = await Promise.all([
+    const [answerRaw, citedSources] = await Promise.all([
       extractAnswer(page),
       extractSources(page),
     ]);
+    // 2026 UI: the thread panel starts with the question bubble — strip it.
+    let answer = answerRaw.trim();
+    const qhead = query.trim().slice(0, 60);
+    if (qhead && answer.startsWith(qhead)) {
+      answer = answer.slice(qhead.length).trim();
+    }
 
     log(`Done. Answer length: ${answer.length} chars, sources: ${citedSources.length}`);
     return { answer, sources: citedSources };
