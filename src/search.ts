@@ -248,6 +248,11 @@ export async function waitForCompletion(page: Page, timeoutMs: number): Promise<
 }
 
 export async function dismissDialogs(page: Page): Promise<void> {
+  // Generic dismiss first: Escape closes open menus, bottom sheets and toast
+  // overlays that would otherwise intercept the model-selector click
+  // ("subtree intercepts pointer events" TimeoutError, seen 2026-10-02).
+  await page.keyboard.press('Escape').catch(() => {});
+  await page.waitForTimeout(300);
   // Cookie banner — "Cookies nécessaires" / "Necessary cookies"
   const cookieBtn = page.locator(
     'button:has-text("Cookies nécessaires"), button:has-text("Necessary cookies")'
