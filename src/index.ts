@@ -48,13 +48,14 @@ mcp.addTool({
     query: z.string().describe("The search query"),
     model: z.enum(MODELS).optional().describe("Answer model to use. Defaults to Perplexity's current selection."),
     timeout_seconds: z.number().optional().describe("Wait budget in seconds for the full answer; floor 300, default 600."),
+    project: z.string().optional().describe("Perplexity project UUID or full project URL. Queries land in that project instead of the main history. Use for automation workspaces, e.g. the FB cron project."),
   }),
-  execute: async ({ query, model, timeout_seconds }) => {
+  execute: async ({ query, model, timeout_seconds, project }) => {
     await ensureBrowser();
     // Pro answers stream for minutes; 90s default truncates. Floor 300s
     // (user decision 2026-10-02).
     const budget = Math.max(300_000, timeout_seconds ? timeout_seconds * 1000 : TIMEOUT_MS);
-    const result = await search(query, budget, model);
+    const result = await search(query, budget, model, project);
     return formatResult(result);
   },
 });

@@ -23,14 +23,20 @@ export interface SearchResult {
 
 const log = (msg: string) => console.error(`[perplexity-web-mcp] ${msg}`);
 
-export async function search(query: string, timeoutMs: number, model?: string): Promise<SearchResult> {
-  log(`Search: "${query}" (timeout: ${timeoutMs}ms, model: ${model ?? "default"})`);
-  return runSearch(query, timeoutMs, null, model);
+export async function search(query: string, timeoutMs: number, model?: string, project?: string): Promise<SearchResult> {
+  log(`Search: "${query}" (timeout: ${timeoutMs}ms, model: ${model ?? "default"}, project: ${project ?? "main"})`);
+  return runSearch(query, timeoutMs, null, model, project);
 }
 
-export async function searchWithSources(query: string, timeoutMs: number, sources: string[], model?: string): Promise<SearchResult> {
-  log(`Search: "${query}" sources=[${sources.join(",")}] (timeout: ${timeoutMs}ms, model: ${model ?? "default"})`);
-  return runSearch(query, timeoutMs, sources, model);
+export async function searchWithSources(query: string, timeoutMs: number, sources: string[], model?: string, project?: string): Promise<SearchResult> {
+  log(`Search: "${query}" sources=[${sources.join(",")}] (timeout: ${timeoutMs}ms, model: ${model ?? "default"}, project: ${project ?? "main"})`);
+  return runSearch(query, timeoutMs, sources, model, project);
+}
+
+// Normalizes a project arg (UUID or full URL) into the project page URL.
+export function projectUrl(project: string): string {
+  if (/^https?:\/\//i.test(project)) return project;
+  return `https://www.perplexity.ai/projects/${project.replace(/^\/+/, "")}`;
 }
 
 // Model names as they appear in the UI model selector (2026-09).
@@ -80,12 +86,13 @@ export async function selectModel(page: Page, model: string): Promise<void> {
   log(`Model selected: ${label}`);
 }
 
-async function runSearch(query: string, timeoutMs: number, sources: string[] | null, model?: string): Promise<SearchResult> {
+async function runSearch(query: string, timeoutMs: number, sources: string[] | null, model?: string, project?: string): Promise<SearchResult> {
   const page = await newSearchPage();
 
   try {
-    log("Navigating to perplexity.ai...");
-    await page.goto(PERPLEXITY_HOME, { waitUntil: "domcontentloaded" });
+    const startUrl = project ? projectUrl(project) : PERPLEXITY_HOME;
+    log(`Navigating to ${project ? "project " : ""}perplexity.ai...`);
+    await page.goto(startUrl, { waitUntil: "domcontentloaded" });
     await dismissDialogs(page);
 
     // Wait for the search input to be ready before any further interaction
@@ -93,7 +100,18 @@ async function runSearch(query: string, timeoutMs: number, sources: string[] | n
 
     if (model) {
       log(`Selecting model: ${model}...`);
-      await selectModel(page, model);
+      try {
+        await selectModel(page, model);
+      } catch (e) {
+        if (project) {
+          // Project pages have a different settings picker (preset menu with
+          // nested Radix submenu that resists automation, 2026-10-02). The
+          // project's own default model applies — continue instead of failing.
+          log(`Model selection failed on project page (${(e as Error).message.split('\n')[0]}) — using project default model.`);
+        } else {
+          throw e;
+        }
+      }
     }
 
     if (sources) {
@@ -253,9 +271,10 @@ export async function dismissDialogs(page: Page): Promise<void> {
   // ("subtree intercepts pointer events" TimeoutError, seen 2026-10-02).
   await page.keyboard.press('Escape').catch(() => {});
   await page.waitForTimeout(300);
-  // Cookie banner — "Cookies nécessaires" / "Necessary cookies"
+  // Cookie policy bottom sheet (project pages, seen 2026-10-02) — buttons
+  // "Allow all" / "Only necessary". Old FR/EN banner variants kept too.
   const cookieBtn = page.locator(
-    'button:has-text("Cookies nécessaires"), button:has-text("Necessary cookies")'
+    'button:has-text("Cookies nécessaires"), button:has-text("Necessary cookies"), button:has-text("Allow all"), button:has-text("Only necessary")'
   ).first();
   if (await cookieBtn.isVisible({ timeout: 1_500 }).catch(() => false)) {
     log("Dismissing cookie banner...");
