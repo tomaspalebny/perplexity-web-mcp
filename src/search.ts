@@ -97,6 +97,9 @@ async function runSearch(query: string, timeoutMs: number, sources: string[] | n
 
     // Wait for the search input to be ready before any further interaction
     await page.locator("#ask-input").first().waitFor({ state: "visible", timeout: 10_000 });
+    // Second dismiss pass (2026-10-03, pop-os e3ab75d): a late consent overlay can
+    // appear after the input becomes visible and eats the model-selector click.
+    await dismissDialogs(page);
 
     if (model) {
       log(`Selecting model: ${model}...`);
@@ -274,7 +277,7 @@ export async function dismissDialogs(page: Page): Promise<void> {
   // Cookie policy bottom sheet (project pages, seen 2026-10-02) — buttons
   // "Allow all" / "Only necessary". Old FR/EN banner variants kept too.
   const cookieBtn = page.locator(
-    'button:has-text("Cookies nécessaires"), button:has-text("Necessary cookies"), button:has-text("Allow all"), button:has-text("Only necessary")'
+    'button:has-text("Cookies nécessaires"), button:has-text("Necessary cookies"), button:has-text("Allow all"), button:has-text("Only necessary"), button:has-text("Povolit vše"), button:has-text("Pouze nezbytné"), button:has-text("Přijmout vše")'
   ).first();
   if (await cookieBtn.isVisible({ timeout: 1_500 }).catch(() => false)) {
     log("Dismissing cookie banner...");
